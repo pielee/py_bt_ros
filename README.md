@@ -29,9 +29,20 @@ Run Turtle1 Action Server
 python3 scenarios/example_turtlesim/turtle_nav_action_server.py --ns /turtle1
 ```
 
+#########################################################################################
+
+
 Run Behaviour Tree Controller
 ```
 python3 main.py
 ```
 
+move to py_bt_ros/scenarios/nav_scenario
+```
+cd ~/py_bt_ros/scenarios/nav_scenario
+```
 
+Run camera service server
+```
+python3 camera_service_node.py
+```
