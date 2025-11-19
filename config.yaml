@@ -14,3 +14,4 @@ bt_runner:
     screen_height: 850
 
   profiling_mode: False
+  profiling_mode: False
