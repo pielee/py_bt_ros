@@ -3,7 +3,10 @@
     <BehaviorTree ID="MainTree">
 
         <Sequence>
+            <WaitForGoal goal_topic="/bt/goal_pose"/>
+            <MoveToGoal/>
             <CaptureImage/>
+            <ReturnToStart/>
         </Sequence>
 
     </BehaviorTree>
