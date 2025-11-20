@@ -22,19 +22,6 @@ from geometry_msgs.msg import PoseStamped, Pose, PoseWithCovarianceStamped
 
 
 
-# ============================================
-# 3) CaptureImage : Trigger 서비스 호출
-# ============================================
-class CaptureImage(ActionWithROSService):
-    def __init__(self, name, agent, service_name="/capture_image"):
-        super().__init__(name, agent, (Trigger, service_name))
-
-    def _build_request(self, agent, blackboard):
-        return Trigger.Request()
-
-    def _interpret_response(self, response, agent, blackboard):
-        return Status.SUCCESS
-
 
 
 
@@ -42,7 +29,7 @@ class CaptureImage(ActionWithROSService):
 class BTNodeList:
     CONTROL_NODES = BaseBTNodeList.CONTROL_NODES    # Sequence 포함
     ACTION_NODES = [
-        "CaptureImage",
     ]
     CONDITION_NODES = []
     DECORATOR_NODES = []
+
