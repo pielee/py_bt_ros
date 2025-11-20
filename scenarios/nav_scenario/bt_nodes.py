@@ -21,10 +21,7 @@ from std_srvs.srv import Trigger
 # ============================================
 # 1) WaitForGoal : /bt/goal_pose 받으면 SUCCESS
 # ============================================
-# [수정됨] geometry_msgs.msg.PoseWithCovarianceStamped 임포트 추가
 from geometry_msgs.msg import PoseStamped, Pose, PoseWithCovarianceStamped
-
-# (다른 임포트 ... )
 
 # ============================================
 # 1) WaitForGoal : /bt/goal_pose 받고, /amcl_pose 저장
@@ -46,7 +43,7 @@ class WaitForGoal(Node):
             10
         )
         
-        # 2. [수정됨] AMCL Pose (현재 위치) 구독
+        # 2. AMCL Pose (현재 위치) 구독
         self.ros.node.create_subscription(
             PoseWithCovarianceStamped,
             pose_topic,
@@ -61,7 +58,7 @@ class WaitForGoal(Node):
         self.current_pose_msg = msg # 현재 위치 계속 업데이트
 
     async def run(self, agent, blackboard):
-        # [수정됨] 새 목표가 오거나, 현재 위치가 없으면 RUNNING
+        #  새 목표가 오거나, 현재 위치가 없으면 RUNNING
         if self.goal_msg is None or self.current_pose_msg is None:
             self.status = Status.RUNNING
             return self.status
@@ -69,7 +66,7 @@ class WaitForGoal(Node):
         # 1. Blackboard에 목표 저장
         blackboard["goal_pose"] = self.goal_msg
 
-        # 2. [수정됨] Blackboard에 *실제* 현재 위치를 'initial_pose'로 저장
+        # 2. Blackboard에 *실제* 현재 위치를 'initial_pose'로 저장
         if "initial_pose" not in blackboard:
             init = PoseStamped()
             init.header.frame_id = "map"
@@ -78,7 +75,7 @@ class WaitForGoal(Node):
             init.pose = self.current_pose_msg.pose.pose 
             blackboard["initial_pose"] = init
         
-        # 3. [수정됨] 목표 처리가 끝났으므로, 다음 Tick에서 RUNNING 상태가 되도록
+        # 3. 목표 처리가 끝났으므로, 다음 Tick에서 RUNNING 상태가 되도록
         #    goal_msg를 None으로 리셋 (무한 반복 방지)
         self.goal_msg = None
 
@@ -142,10 +139,10 @@ class ReturnToStart(ActionWithROSAction):
 
 
 # ============================================
-# BT Node Registration (중요)
+# BT Node Registration
 # ============================================
 class BTNodeList:
-    CONTROL_NODES = BaseBTNodeList.CONTROL_NODES    # Sequence 포함
+    CONTROL_NODES = BaseBTNodeList.CONTROL_NODES
     ACTION_NODES = [
         "WaitForGoal",
         "MoveToGoal",
