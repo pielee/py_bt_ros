@@ -15,14 +15,16 @@ from modules.base_bt_nodes_ros import (
 from geometry_msgs.msg import PoseStamped, Quaternion
 from nav2_msgs.action import NavigateToPose
 
+def deg(d: float) -> float:
+    return math.radians(d)
 
 # ================================
 # 좌표 정의 (네 맵에 맞게 수정 필요!)
 # ================================
 # 예시 값이니까, 실제 map 좌표로 꼭 바꿔줘!
-CHARGE_X,  CHARGE_Y,  CHARGE_YAW  = 0.0, 0.0, 0.0   # 충전 장소
-PICKUP_X,  PICKUP_Y,  PICKUP_YAW  = 1.0, 0.0, 0.0   # 택배 수령 장소
-DELIV_X,   DELIV_Y,   DELIV_YAW   = 2.0, 0.0, 0.0   # 택배 배달 장소
+CHARGE_X,  CHARGE_Y,  CHARGE_YAW  = -4.198, 0.2, deg(89.274)   # 충전 장소
+PICKUP_X,  PICKUP_Y,  PICKUP_YAW  = -6.326, 3.209, deg(-78.415)   # 택배 수령 장소
+DELIV_X,   DELIV_Y,   DELIV_YAW   = -4.19, 2.063, deg(-6.810)   # 택배 배달 장소
 
 
 def yaw_to_quaternion(yaw: float) -> Quaternion:
@@ -63,7 +65,10 @@ class MoveToCharge(ActionWithROSAction):
 
     def _interpret_result(self, result, agent, blackboard, status_code=None):
         # Nav2 결과를 세부적으로 보고 싶으면 여기서 처리
-        return Status.SUCCESS
+        if status_code == 0:
+           return Status.SUCCESS
+        else:
+            return Status.FAILURE
 
 
 # ============================================
@@ -77,7 +82,10 @@ class MoveToPickup(ActionWithROSAction):
         return _build_nav_goal(PICKUP_X, PICKUP_Y, PICKUP_YAW, agent)
 
     def _interpret_result(self, result, agent, blackboard, status_code=None):
-        return Status.SUCCESS
+        if status_code == 0:
+           return Status.SUCCESS
+        else:
+            return Status.FAILURE
 
 
 # ============================================
@@ -91,14 +99,17 @@ class MoveToDelivery(ActionWithROSAction):
         return _build_nav_goal(DELIV_X, DELIV_Y, DELIV_YAW, agent)
 
     def _interpret_result(self, result, agent, blackboard, status_code=None):
-        return Status.SUCCESS
+        if status_code == 0:
+           return Status.SUCCESS
+        else:
+            return Status.FAILURE
 
 
 # ============================================
 # 4) ReceiveParcel : 택배 수령 (더미, 항상 성공)
 # ============================================
 class ReceiveParcel(Node):
-    def __init__(self, name, agent, wait_sec: float = 1.0):
+    def __init__(self, name, agent, wait_sec: float = 3.0):
         super().__init__(name)
         self.wait_sec = wait_sec
         self._start_time = None
@@ -127,7 +138,7 @@ class ReceiveParcel(Node):
 # 5) DropoffParcel : 택배 배달 (더미, 항상 성공)
 # ============================================
 class DropoffParcel(Node):
-    def __init__(self, name, agent, wait_sec: float = 1.0):
+    def __init__(self, name, agent, wait_sec: float = 3.0):
         super().__init__(name)
         self.wait_sec = wait_sec
         self._start_time = None
