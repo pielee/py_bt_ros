@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root BTCPP_format="4">
+  <BehaviorTree ID="limo_parcel_loop">
+    <ReactiveSequence>
+      <Sequence>
+
+        <MoveToPickup/>
+
+        <ReceiveParcel/>
+
+        <WaitForQRPose/>
+
+        <MoveToDelivery/>
+
+        <DropoffParcel/>
+
+      </Sequence>
+    </ReactiveSequence>
+  </BehaviorTree>
+
+  <TreeNodesModel>
+    <Action ID="MoveToPickup" editable="true"/>
+    <Action ID="ReceiveParcel" editable="true"/>
+    <Action ID="WaitForQRPose" editable="true"/>
+    <Action ID="MoveToDelivery" editable="true"/>
+    <Action ID="DropoffParcel" editable="true"/>
+    <Action ID="MoveToCharge" editable="true"/>
+  </TreeNodesModel>
+</root>

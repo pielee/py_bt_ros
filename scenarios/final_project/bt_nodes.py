@@ -12,8 +12,14 @@ from modules.base_bt_nodes import (
     Node,
     Status,
     Sequence,
+    Fallback,
+    ReactiveSequence,
+    ReactiveFallback,
+    Parallel,
     BTNodeList as BaseBTNodeList
 )
+
+
 from modules.base_bt_nodes_ros import (
     ActionWithROSAction,
 )
