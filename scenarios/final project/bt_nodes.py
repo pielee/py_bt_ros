@@ -1,181 +1,221 @@
 import math
+import os
+import yaml
 import rclpy
 from rclpy.node import Node as RosNode
+
+from geometry_msgs.msg import PoseStamped, Quaternion
+from nav2_msgs.action import NavigateToPose
 
 from modules.base_bt_nodes import (
     Node,
     Status,
-    Sequence,
     BTNodeList as BaseBTNodeList
 )
 from modules.base_bt_nodes_ros import (
     ActionWithROSAction,
 )
 
-from geometry_msgs.msg import PoseStamped, Quaternion
-from nav2_msgs.action import NavigateToPose
 
-def deg(d: float) -> float:
+# ------------------------------------------------------------
+# 공통 좌표 (pickup/charge 는 고정)
+# ------------------------------------------------------------
+def deg(d):
     return math.radians(d)
 
-# ================================
-# 좌표 정의 (네 맵에 맞게 수정 필요!)
-# ================================
-# 예시 값이니까, 실제 map 좌표로 꼭 바꿔줘!
-CHARGE_X,  CHARGE_Y,  CHARGE_YAW  = -4.198, 0.2, deg(89.274)   # 충전 장소
-PICKUP_X,  PICKUP_Y,  PICKUP_YAW  = -6.326, 3.209, deg(-78.415)   # 택배 수령 장소
-DELIV_X,   DELIV_Y,   DELIV_YAW   = -4.19, 2.063, deg(-6.810)   # 택배 배달 장소
+CHARGE_X, CHARGE_Y, CHARGE_YAW = -4.198, 0.2, deg(89.274)
+PICKUP_X, PICKUP_Y, PICKUP_YAW = -6.326, 3.209, deg(-78.415)
 
 
-def yaw_to_quaternion(yaw: float) -> Quaternion:
-    """2D yaw(라디안) -> Quaternion (z, w만 사용)"""
+# ------------------------------------------------------------
+def yaw_to_quaternion(yaw):
     q = Quaternion()
     q.z = math.sin(yaw / 2.0)
     q.w = math.cos(yaw / 2.0)
     return q
 
 
-def _build_nav_goal(x: float, y: float, yaw: float, agent) -> NavigateToPose.Goal:
-    """주어진 (x, y, yaw)로 Nav2 NavigateToPose.Goal 생성 헬퍼"""
+def _build_nav_goal(x, y, yaw, agent):
     goal = NavigateToPose.Goal()
 
     ps = PoseStamped()
     ps.header.frame_id = "map"
-    # agent 안에 ros_bridge가 있다고 가정 (WaitForGoal에서 쓰던 패턴)
     ps.header.stamp = agent.ros_bridge.node.get_clock().now().to_msg()
 
     ps.pose.position.x = x
     ps.pose.position.y = y
-    ps.pose.position.z = 0.0
     ps.pose.orientation = yaw_to_quaternion(yaw)
 
     goal.pose = ps
     return goal
 
 
-# ============================================
-# 1) MoveToCharge : 충전 장소로 이동
-# ============================================
-class MoveToCharge(ActionWithROSAction):
+# ============================================================
+# 1) SetGoal : pickup / charge / qr (3종류를 모두 수행)
+# ============================================================
+class SetGoal(Node):
+    def __init__(self, name, mode):
+        super().__init__(name)
+        self.mode = mode
+
+        # YAML 파일 위치 (현재 파일 기준)
+        base = os.path.dirname(__file__)
+        self.yaml_path = os.path.join(base, "qr_locations.yaml")
+
+        # YAML 로딩
+        if os.path.exists(self.yaml_path):
+            with open(self.yaml_path, "r", encoding="utf-8") as f:
+                self.qr_map = yaml.safe_load(f).get("qr_targets", {})
+            print(f"[BT] Loaded QR YAML: {self.yaml_path}")
+        else:
+            self.qr_map = {}
+            print(f"[BT] WARNING: qr_locations.yaml not found at {self.yaml_path}")
+
+    async def run(self, agent, blackboard):
+
+        # -------------------------
+        # pickup
+        # -------------------------
+        if self.mode == "pickup":
+            blackboard["goal_x"] = PICKUP_X
+            blackboard["goal_y"] = PICKUP_Y
+            blackboard["goal_yaw"] = PICKUP_YAW
+            print(f"[BT] SetGoal: pickup → ({PICKUP_X}, {PICKUP_Y})")
+            return Status.SUCCESS
+
+        # -------------------------
+        # charge
+        # -------------------------
+        if self.mode == "charge":
+            blackboard["goal_x"] = CHARGE_X
+            blackboard["goal_y"] = CHARGE_Y
+            blackboard["goal_yaw"] = CHARGE_YAW
+            print(f"[BT] SetGoal: charge → ({CHARGE_X}, {CHARGE_Y})")
+            return Status.SUCCESS
+
+        # -------------------------
+        # qr : YAML 기반 목적지
+        # -------------------------
+        if self.mode == "qr":
+            qr_key = blackboard.get("qr_code")
+
+            if qr_key is None:
+                print("[BT] SetGoal(qr): qr_code 없음")
+                return Status.FAILURE
+
+            if qr_key not in self.qr_map:
+                print(f"[BT] SetGoal(qr): '{qr_key}' YAML에 없음")
+                return Status.FAILURE
+
+            pose = self.qr_map[qr_key]
+
+            blackboard["goal_x"] = pose["x"]
+            blackboard["goal_y"] = pose["y"]
+            blackboard["goal_yaw"] = pose["yaw"]
+
+            print(f"[BT] SetGoal(qr): {qr_key} → ({pose['x']}, {pose['y']})")
+            return Status.SUCCESS
+
+        return Status.FAILURE
+
+
+# ============================================================
+# 2) MoveToGoal : Nav2 NavigateToPose
+# ============================================================
+class MoveToGoal(ActionWithROSAction):
     def __init__(self, name, agent, action_name="/navigate_to_pose"):
         super().__init__(name, agent, (NavigateToPose, action_name))
 
     def _build_goal(self, agent, blackboard):
-        return _build_nav_goal(CHARGE_X, CHARGE_Y, CHARGE_YAW, agent)
+
+        x = blackboard.get("goal_x")
+        y = blackboard.get("goal_y")
+        yaw = blackboard.get("goal_yaw")
+
+        if x is None:
+            print("[BT] MoveToGoal: goal_x 없음")
+            return None
+
+        return _build_nav_goal(x, y, yaw, agent)
 
     def _interpret_result(self, result, agent, blackboard, status_code=None):
-        # Nav2 결과를 세부적으로 보고 싶으면 여기서 처리
-        if status_code == 0:
-           return Status.SUCCESS
-        else:
-            return Status.FAILURE
+        return Status.SUCCESS if status_code == 0 else Status.FAILURE
 
 
-# ============================================
-# 2) MoveToPickup : 택배 수령 장소로 이동
-# ============================================
-class MoveToPickup(ActionWithROSAction):
-    def __init__(self, name, agent, action_name="/navigate_to_pose"):
-        super().__init__(name, agent, (NavigateToPose, action_name))
-
-    def _build_goal(self, agent, blackboard):
-        return _build_nav_goal(PICKUP_X, PICKUP_Y, PICKUP_YAW, agent)
-
-    def _interpret_result(self, result, agent, blackboard, status_code=None):
-        if status_code == 0:
-           return Status.SUCCESS
-        else:
-            return Status.FAILURE
-
-
-# ============================================
-# 3) MoveToDelivery : 택배 배달 장소로 이동
-# ============================================
-class MoveToDelivery(ActionWithROSAction):
-    def __init__(self, name, agent, action_name="/navigate_to_pose"):
-        super().__init__(name, agent, (NavigateToPose, action_name))
-
-    def _build_goal(self, agent, blackboard):
-        return _build_nav_goal(DELIV_X, DELIV_Y, DELIV_YAW, agent)
-
-    def _interpret_result(self, result, agent, blackboard, status_code=None):
-        if status_code == 0:
-           return Status.SUCCESS
-        else:
-            return Status.FAILURE
-
-
-# ============================================
-# 4) ReceiveParcel : 택배 수령 (더미, 항상 성공)
-# ============================================
+# ============================================================
+# 3) ReceiveParcel : QR + 택배 수령
+# ============================================================
 class ReceiveParcel(Node):
-    def __init__(self, name, agent, wait_sec: float = 3.0):
+    def __init__(self, name, wait_sec=3.0):
         super().__init__(name)
         self.wait_sec = wait_sec
-        self._start_time = None
+        self.start = None
 
     async def run(self, agent, blackboard):
         import time
 
-        # 처음 들어왔을 때 시작 시간 기록
-        if self._start_time is None:
-            self._start_time = time.time()
-            self.status = Status.RUNNING
-            return self.status
+        if self.start is None:
+            self.start = time.time()
+            return Status.RUNNING
 
-        # wait_sec 만큼 기다린 뒤 SUCCESS 반환
-        if time.time() - self._start_time >= self.wait_sec:
-            self._start_time = None
-            print("[BT] ReceiveParcel: 택배 수령 완료 (더미 성공)")
-            self.status = Status.SUCCESS
-            return self.status
+        if time.time() - self.start >= self.wait_sec:
+            self.start = None
+            print("[BT] ReceiveParcel: 완료")
+            return Status.SUCCESS
 
-        self.status = Status.RUNNING
-        return self.status
+        return Status.RUNNING
 
 
-# ============================================
-# 5) DropoffParcel : 택배 배달 (더미, 항상 성공)
-# ============================================
+# ============================================================
+# 4) DropoffParcel
+# ============================================================
 class DropoffParcel(Node):
-    def __init__(self, name, agent, wait_sec: float = 3.0):
+    def __init__(self, name, wait_sec=3.0):
         super().__init__(name)
         self.wait_sec = wait_sec
-        self._start_time = None
+        self.start = None
 
     async def run(self, agent, blackboard):
         import time
 
-        if self._start_time is None:
-            self._start_time = time.time()
-            self.status = Status.RUNNING
-            return self.status
+        if self.start is None:
+            self.start = time.time()
+            return Status.RUNNING
 
-        if time.time() - self._start_time >= self.wait_sec:
-            self._start_time = None
-            print("[BT] DropoffParcel: 택배 배달 완료 (더미 성공)")
-            self.status = Status.SUCCESS
-            return self.status
+        if time.time() - self.start >= self.wait_sec:
+            self.start = None
+            print("[BT] DropoffParcel: 완료")
+            return Status.SUCCESS
 
-        self.status = Status.RUNNING
-        return self.status
+        return Status.RUNNING
 
 
-# ============================================
-# BT Node Registration
-# ============================================
+# ============================================================
+# 5) HasParcel : qr_code 유무로 판단
+# ============================================================
+class HasParcel(Node):
+    async def run(self, agent, blackboard):
+        qr = blackboard.get("qr_code")
+
+        if qr is None:
+            print("[BT] HasParcel: 택배 없음 → FAILURE")
+            return Status.FAILURE
+
+        print("[BT] HasParcel: 택배 있음")
+        return Status.SUCCESS
+
+
+# ============================================================
+# 노드 등록
+# ============================================================
 class BTNodeList:
-    # Sequence / Fallback 등 기본 CONTROL_NODES는 그대로 재사용
     CONTROL_NODES = BaseBTNodeList.CONTROL_NODES
-
-    # 우리가 새로 정의한 Action/Leaf 노드들 이름
     ACTION_NODES = [
-        "MoveToCharge",
-        "MoveToPickup",
-        "MoveToDelivery",
+        "SetGoal",
+        "MoveToGoal",
         "ReceiveParcel",
         "DropoffParcel",
+        "HasParcel"
     ]
-
     CONDITION_NODES = []
     DECORATOR_NODES = []

@@ -4,25 +4,35 @@
   <BehaviorTree ID="MainTree">
 
     <Sequence>
-      <MoveToCharge/>
 
-      <!-- 1) 충전 장소 -> 택배 수령 장소 -->
-      <MoveToPickup/>
+      <!-- 반복: 수령 → QR → 배달 -->
+      <RepeatUntilFailure>
+        <Sequence>
 
-      <!-- 2) 택배 수령 (항상 성공, 더미) -->
-      <ReceiveParcel/>
+          <!-- 1) 수령소 이동 -->
+          <SetGoal mode="pickup"/>
+          <MoveToGoal/>
 
-      <!-- 3) 수령 장소 -> 배달 장소 -->
-      <MoveToDelivery/>
+          <!-- 2) 택배 수령 (QR 스캔 포함) -->
+          <ReceiveParcel/>
 
-      <!-- 4) 택배 배달 (항상 성공, 더미) -->
-      <DropoffParcel/>
+          <!-- 3) 택배가 없으면 루프 종료 -->
+          <HasParcel/>
 
-      <!-- 5) 배달 장소 -> 다시 수령 장소 -->
-      <MoveToPickup/>
+          <!-- 4) QR 목적지 이동 -->
+          <SetGoal mode="qr"/>
+          <MoveToGoal/>
 
-      <!-- 6) 수령 장소 -> 충전 장소 복귀 -->
-      <MoveToCharge/>
+          <!-- 5) 배달 -->
+          <DropoffParcel/>
+
+        </Sequence>
+      </RepeatUntilFailure>
+
+      <!-- 루프 종료(택배 없음) → 충전소 이동 -->
+      <SetGoal mode="charge"/>
+      <MoveToGoal/>
+
     </Sequence>
 
   </BehaviorTree>

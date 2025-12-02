@@ -1,0 +1,15 @@
+qr_targets:
+  QR_SEOUL:
+    x: -6.326
+    y: 3.209
+    yaw: 1.57
+
+  QR_GYEONGGI:
+    x: -4.198
+    y: 0.200
+    yaw: 3.14
+
+  QR_TEST:
+    x: -2.0
+    y: 1.0
+    yaw: 0.0
