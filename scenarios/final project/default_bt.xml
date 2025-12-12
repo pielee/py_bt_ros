@@ -1,40 +1,109 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<root main_tree_to_execute="MainTree">
+<root BTCPP_format="4">
 
-  <BehaviorTree ID="MainTree">
-
+  <BehaviorTree ID="limo_delivery_tree">
     <Sequence>
 
-      <!-- 반복: 수령 → QR → 배달 -->
-      <RepeatUntilFailure>
-        <Sequence>
+      <!-- =============================================== -->
+      <!-- 1. MOVE TO PICKUP (STATEFUL + REACTIVE IF) -->
+      <!-- =============================================== -->
+      <Fallback>
 
-          <!-- 1) 수령소 이동 -->
-          <SetGoal mode="pickup"/>
-          <MoveToGoal/>
+        <!-- 이미 도착했으면 통과 -->
+        <AtPickupLocation/>
 
-          <!-- 2) 택배 수령 (QR 스캔 포함) -->
-          <ReceiveParcel/>
+        <!-- 아직 안 도착 -->
+        <Fallback>
 
-          <!-- 3) 택배가 없으면 루프 종료 -->
-          <HasParcel/>
+          <!-- IF other robot busy -->
+          <Sequence>
+            <OtherRobotReceiving/>
+            <MoveToWaiting/>
+          </Sequence>
 
-          <!-- 4) QR 목적지 이동 -->
-          <SetGoal mode="qr"/>
-          <MoveToGoal/>
+          <!-- ELSE -->
+          <MoveToPickup/>
 
-          <!-- 5) 배달 -->
-          <DropoffParcel/>
+        </Fallback>
+      </Fallback>
 
-        </Sequence>
-      </RepeatUntilFailure>
+      <!-- =============================================== -->
+      <!-- 2. RECEIVE PARCEL -->
+      <!-- =============================================== -->
+      <RetryUntilSuccessful num_attempts="60">
+        <ReceiveParcel/>
+      </RetryUntilSuccessful>
 
-      <!-- 루프 종료(택배 없음) → 충전소 이동 -->
-      <SetGoal mode="charge"/>
-      <MoveToGoal/>
+      <!-- =============================================== -->
+      <!-- 3. QR SEARCH -->
+      <!-- =============================================== -->
+      <Timeout duration="10.0">
+        <WaitForQRPose/>
+      </Timeout>
+
+      <!-- =============================================== -->
+      <!-- 4. MOVE TO DELIVERY (STATEFUL + REACTIVE IF) -->
+      <!-- =============================================== -->
+      <Fallback>
+
+        <AtDeliveryLocation/>
+
+        <Fallback>
+
+          <Sequence>
+            <OtherRobotDropping/>
+            <MoveToWaiting/>
+          </Sequence>
+
+          <MoveToDelivery/>
+
+        </Fallback>
+      </Fallback>
+
+      <!-- =============================================== -->
+      <!-- 5. DROPOFF -->
+      <!-- =============================================== -->
+      <RetryUntilSuccessful num_attempts="60">
+        <DropoffParcel/>
+      </RetryUntilSuccessful>
+
+      <!-- =============================================== -->
+      <!-- 6. RETURN -->
+      <!-- =============================================== -->
+      <MoveToCharge/>
 
     </Sequence>
-
   </BehaviorTree>
+
+  <!-- =============================================== -->
+  <!-- NODE MODEL -->
+  <!-- =============================================== -->
+  <TreeNodesModel>
+
+    <!-- Actions -->
+    <Action ID="MoveToPickup"/>
+    <Action ID="MoveToDelivery"/>
+    <Action ID="MoveToWaiting"/>
+    <Action ID="MoveToCharge"/>
+    <Action ID="WaitForQRPose"/>
+
+    <!-- Conditions -->
+    <Condition ID="AtPickupLocation"/>
+    <Condition ID="AtDeliveryLocation"/>
+    <Condition ID="ReceiveParcel"/>
+    <Condition ID="DropoffParcel"/>
+    <Condition ID="OtherRobotReceiving"/>
+    <Condition ID="OtherRobotDropping"/>
+
+    <!-- Decorators -->
+    <Decorator ID="RetryUntilSuccessful">
+      <input_port name="num_attempts" type="int"/>
+    </Decorator>
+
+    <Decorator ID="Timeout">
+      <input_port name="duration" type="float"/>
+    </Decorator>
+
+  </TreeNodesModel>
 
 </root>
