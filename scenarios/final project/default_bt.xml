@@ -3,71 +3,74 @@
 
   <BehaviorTree ID="limo_delivery_tree">
 
-    <Sequence>
+    <!-- ================================================= -->
+    <!-- TOP: 항상 반응 -->
+    <!-- ================================================= -->
+    <ReactiveFallback>
 
-      <!-- ================================================= -->
-      <!-- 1. MOVE TO PICKUP (REACTIVE IF) -->
-      <!-- ================================================= -->
-      <ReactiveFallback>
+      <!-- ============================================= -->
+      <!-- 📦 택배가 있는 경우 -->
+      <!-- ============================================= -->
+      <Sequence>
 
-        <!-- IF other robot is receiving -->
-        <Sequence>
-          <OtherRobotReceiving/>
-          <MoveToWaiting/>
-        </Sequence>
+        <!-- 택배 존재 조건 -->
+        <ParcelAvailable/>
 
-        <!-- ELSE -->
-        <MoveToPickup/>
+        <!-- =============================== -->
+        <!-- PICKUP (대기 포함) -->
+        <!-- =============================== -->
+        <ReactiveFallback>
 
-      </ReactiveFallback>
+          <!-- 다른 로봇이 수령 중이면 대기 -->
+          <Sequence>
+            <OtherRobotReceiving/>
+            <MoveToWaiting/>
+          </Sequence>
 
-      <!-- ================================================= -->
-      <!-- 2. QR / DELIVERY OR CHARGE -->
-      <!-- ================================================= -->
-      <Fallback>
+          <!-- 아니면 픽업 -->
+          <MoveToPickup/>
 
-        <!-- ================= SUCCESS PATH ================= -->
-        <Sequence>
+        </ReactiveFallback>
 
-          <!-- QR SEARCH (TIMEOUT) -->
-          <Timeout duration="10.0">
-            <WaitForQRPose/>
-          </Timeout>
+        <!-- 수령 -->
+        <RetryUntilSuccessful num_attempts="60">
+          <ReceiveParcel/>
+        </RetryUntilSuccessful>
 
-          <!-- RECEIVE PARCEL -->
-          <RetryUntilSuccessful num_attempts="60">
-            <ReceiveParcel/>
-          </RetryUntilSuccessful>
+        <!-- QR 탐색 -->
+        <Timeout duration="10.0">
+          <WaitForQRPose/>
+        </Timeout>
 
-          <!-- MOVE TO DELIVERY (REACTIVE IF) -->
-          <ReactiveFallback>
+        <!-- =============================== -->
+        <!-- DELIVERY (대기 포함) -->
+        <!-- =============================== -->
+        <ReactiveFallback>
 
-            <Sequence>
-              <OtherRobotDropping/>
-              <MoveToWaiting/>
-            </Sequence>
+          <!-- 다른 로봇이 배송 중이면 대기 -->
+          <Sequence>
+            <OtherRobotDropping/>
+            <MoveToWaiting/>
+          </Sequence>
 
-            <MoveToDelivery/>
+          <!-- 아니면 배송 -->
+          <MoveToDelivery/>
 
-          </ReactiveFallback>
+        </ReactiveFallback>
 
-          <!-- DROPOFF -->
-          <RetryUntilSuccessful num_attempts="60">
-            <DropoffParcel/>
-          </RetryUntilSuccessful>
+        <!-- 하차 -->
+        <RetryUntilSuccessful num_attempts="60">
+          <DropoffParcel/>
+        </RetryUntilSuccessful>
 
-          <!-- SUCCESS → RETURN -->
-          <MoveToCharge/>
+      </Sequence>
 
-        </Sequence>
+      <!-- ============================================= -->
+      <!-- 🔋 택배 없으면 충전 -->
+      <!-- ============================================= -->
+      <MoveToCharge/>
 
-        <!-- ================= FAILURE PATH ================= -->
-        <!-- QR TIMEOUT FAILS → GO CHARGE -->
-        <MoveToCharge/>
-
-      </Fallback>
-
-    </Sequence>
+    </ReactiveFallback>
 
   </BehaviorTree>
 
@@ -84,12 +87,13 @@
     <Action ID="WaitForQRPose"/>
 
     <!-- Conditions -->
+    <Condition ID="ParcelAvailable"/>
     <Condition ID="ReceiveParcel"/>
     <Condition ID="DropoffParcel"/>
     <Condition ID="OtherRobotReceiving"/>
     <Condition ID="OtherRobotDropping"/>
 
-    <!-- Controls -->
+    <!-- Control -->
     <Control ID="ReactiveFallback"/>
 
     <!-- Decorators -->
