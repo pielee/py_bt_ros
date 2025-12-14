@@ -86,73 +86,84 @@ class RetryUntilSuccessful(Node):
         self.attempts = 0
         return Status.FAILURE
 
-
 class Timeout(Node):
     def __init__(self, name, child, duration=10.0):
         super().__init__(name)
         self.child = child
         self.duration = float(duration)
-
         self.start_time = None
-        self.is_running = False
-
-        self.busy_pub = None
-        self.busy_cleared = False
+        self.is_running = False 
         self.type = "Decorator"
 
+        # 🔴 추가: busy 퍼블리셔 & 중복 방지 플래그
+        self.busy_pub = None
+        self.busy_cleared = False
+
     async def run(self, agent, blackboard):
+        # 🔴 추가: 퍼블리셔는 최초 1회만 생성
         if self.busy_pub is None:
             self.busy_pub = agent.ros_bridge.node.create_publisher(
                 Bool, "/receive_busy", 10
             )
 
-        if not self.is_running:
+        # [핵심] 처음 시작할 때만 타이머 시작
+        if not self.is_running or self.start_time is None:
             self.start_time = time.time()
             self.is_running = True
-            self.busy_cleared = False
-            print(f"[{self.name}] ⏳ Timer started ({self.duration}s)")
+            self.busy_cleared = False   # 🔴 추가
+            print(f"[{self.name}] ⏳ Timer Started. Limit: {self.duration}s")
 
         elapsed = time.time() - self.start_time
+        
+        # 1초마다 남은 시간 출력 (기존 그대로)
+        if int(elapsed * 10) % 10 == 0:
+             print(f"[{self.name}] ... {elapsed:.1f}s / {self.duration}s")
 
+        # ⛔ 시간 초과
         if elapsed > self.duration:
+            print(f"[{self.name}] 🚨 TIMEOUT! ({elapsed:.1f}s). Force FAILURE.")
+
+            # 🔴 추가: busy false 한 번만 발행
             if not self.busy_cleared:
                 self.busy_pub.publish(Bool(data=False))
                 self.busy_cleared = True
                 print(f"[{self.name}] 🔓 /receive_busy = false (timeout)")
 
-            if hasattr(self.child, "halt"):
+            if hasattr(self.child, 'halt'):
                 self.child.halt()
 
-            self.is_running = False
+            self.is_running = False 
+            self.status = Status.FAILURE
             return Status.FAILURE
 
         result = await self.child.run(agent, blackboard)
-
+        
         if result == Status.SUCCESS:
+            print(f"[{self.name}] Child Succeeded!")
             self.is_running = False
+            self.status = Status.SUCCESS
             return Status.SUCCESS
-
+        
         if result == Status.FAILURE:
             self.is_running = False
+            self.status = Status.FAILURE
             return Status.FAILURE
 
+        self.status = Status.RUNNING
         return Status.RUNNING
 
     def reset(self):
-        # 🔑 중요: 다음 실행을 위한 "완전 초기화"
-        self.start_time = None
-        self.is_running = False
-        self.busy_cleared = False
-        if hasattr(self.child, "reset"):
+        # [의도 유지] 시간 유지
+        super().reset()
+        if hasattr(self.child, 'reset'):
             self.child.reset()
 
     def halt(self):
-        # 중간 강제 중단
-        self.start_time = None
+        # 🔴 halt 시에는 타이머 리셋 (기존 그대로)
         self.is_running = False
-        if hasattr(self.child, "halt"):
+        self.start_time = None
+        if hasattr(self.child, 'halt'):
             self.child.halt()
-
 
 
 # =========================================================
@@ -193,16 +204,48 @@ class ReceiveParcel(ConditionWithROSTopics):
 class DropoffParcel(ConditionWithROSTopics):
     def __init__(self, node_name, agent, name=None):
         final_name = name if name else node_name
-        super().__init__(final_name, agent, [(String, "/limo/button_status", "button_state")])
+        super().__init__(
+            final_name,
+            agent,
+            [(String, "/limo/button_status", "button_state")]
+        )
+
+        self.busy_pub = agent.ros_bridge.node.create_publisher(
+            Bool, DROPOFF_BUSY_TOPIC, 10
+        )
+        self.busy_cleared = False
 
     def _predicate(self, agent, blackboard):
-        if "button_state" not in self._cache: return False
-        
+        if "button_state" not in self._cache:
+            return False
+
         state = self._cache["button_state"].data.strip().lower()
+
         if state in ["released", "release"]:
+            if not self.busy_cleared:
+                self.busy_pub.publish(Bool(data=False))
+                self.busy_cleared = True
+                print("[DropoffParcel] 🔓 /dropoff_busy = false")
+
             del self._cache["button_state"]
             return True
+
         return False
+
+
+class ParcelAvailable(ConditionWithROSTopics):
+    def __init__(self, node_name, agent, name=None):
+        super().__init__(
+            name if name else node_name,
+            agent,
+            [(Bool, "/parcel_available", "parcel")]
+        )
+
+    async def run(self, agent, blackboard):
+        msg = self._cache.get("parcel")
+        if msg is None:
+            return Status.FAILURE
+        return Status.SUCCESS if msg.data else Status.FAILURE
 
 
 # =========================================================
@@ -318,15 +361,41 @@ class MoveToWaiting(ActionWithROSAction):
 
 class MoveToDelivery(ActionWithROSAction):
     def __init__(self, node_name, agent, name=None):
-        super().__init__(name if name else node_name, agent,
-                         (NavigateToPose, NAV_ACTION_NAME))
+        final_name = name if name else node_name
+        super().__init__(final_name, agent, (NavigateToPose, NAV_ACTION_NAME))
+
+        # 🔴 추가: dropoff busy 퍼블리셔
+        self.busy_pub = agent.ros_bridge.node.create_publisher(
+            Bool, DROPOFF_BUSY_TOPIC, 10
+        )
+        self.busy_sent = False  # 🔑 중복 발행 방지
 
     def _build_goal(self, agent, blackboard):
-        pose = blackboard.get("qr_target_pose")
-        if pose is None:
+        qr_pose = blackboard.get("qr_target_pose")
+        if qr_pose is None: 
+            print(f"[{self.name}] ❌ ERROR: No QR Pose in blackboard!")
             return None
-        return _create_nav_goal(self.ros.node, 0, 0, pose_stamped=pose)
 
+        print(f"[{self.name}] 🚚 Moving to Delivery Point (from QR)...")
+        return _create_nav_goal(self.ros.node, 0, 0, pose_stamped=qr_pose)
+    
+    def _interpret_result(self, result, agent, blackboard, status_code=None):
+        if status_code == GoalStatus.STATUS_SUCCEEDED:
+            print(f"[{self.name}] ✅ ARRIVED at delivery")
+
+            # 🔴 dropoff busy = true (한 번만)
+            if not self.busy_sent:
+                self.busy_pub.publish(Bool(data=True))
+                self.busy_sent = True
+                print(f"[{self.name}] 🔴 /dropoff_busy = true (published once)")
+
+            # QR pose는 이제 소모됨
+            if "qr_target_pose" in blackboard:
+                del blackboard["qr_target_pose"]
+
+            return Status.SUCCESS
+
+        return Status.FAILURE
 
 
 # =========================================================
@@ -339,7 +408,7 @@ BTNodeList.ACTION_NODES += [
 
 BTNodeList.CONDITION_NODES += [
     "ReceiveParcel", "DropoffParcel",
-    "OtherRobotReceiving", "OtherRobotDropping"
+    "OtherRobotReceiving", "OtherRobotDropping","ParcelAvailable"
 ]
 
 BTNodeList.DECORATOR_NODES += [
