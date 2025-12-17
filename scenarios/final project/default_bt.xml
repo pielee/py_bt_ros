@@ -1,13 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
 
 <root main_tree_to_execute="MainTree">
-    <BehaviorTree ID="MainTree">
 
+  <BehaviorTree ID="MainTree">
+
+    <ReactiveSequence>
+
+      <ReactiveFallback>
+
+        <!-- ============================= -->
+        <!-- PICKUP + DELIVERY -->
+        <!-- ============================= -->
         <Sequence>
-            <WaitForGoal goal_topic="/bt/goal_pose"/>
-            <MoveToGoal/>
-            <CaptureImage/>
-            <ReturnToStart/>
+
+          <ParcelAvailable/>
+
+          <ReactiveFallback>
+            <ReactiveSequence>
+              <OtherRobotReceiving/>
+              <MoveToPickupWaiting/>
+            </ReactiveSequence>
+            <MoveToPickup/>
+          </ReactiveFallback>
+
+          <Timeout duration="100000.0">
+            <RetryUntilSuccessful num_attempts="60">
+              <WaitForQRPose/>
+            </RetryUntilSuccessful>
+          </Timeout>
+
+          <RetryUntilSuccessful num_attempts="60">
+            <ReceiveParcel/>
+          </RetryUntilSuccessful>          
+
+          <ReactiveFallback>
+
+            <!-- 버튼 ON 로직 -->
+            <ReactiveSequence>
+
+              <IsButtonPressed/>
+
+              <ReactiveFallback>
+
+                <ReactiveSequence>
+                  <OtherRobotDropping/>
+                  <MoveToWaitingDrop/>
+                </ReactiveSequence>
+
+                <MoveToDelivery/>
+
+              </ReactiveFallback>
+
+            </ReactiveSequence>
+
+            <!-- 버튼 OFF -->
+            <RetryUntilSuccessful num_attempts="999999">
+              <Sequence>
+                <SpinInPlace name="Spinning (Wait for Button)"/>
+                <AlwaysFailure name="Force Loop"/>
+              </Sequence>
+            </RetryUntilSuccessful>
+
+          </ReactiveFallback>
+
+          <RetryUntilSuccessful num_attempts="999999">
+            <DropoffParcel/>
+          </RetryUntilSuccessful>
+
         </Sequence>
 
-    </BehaviorTree>
+        <MoveToCharge/>
+
+      </ReactiveFallback>
+
+    </ReactiveSequence>
+
+  </BehaviorTree>
+
 </root>
