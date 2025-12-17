@@ -1,37 +1,39 @@
 # py_bt_ros
 
-A minimal example showing how to use the Behaviour Tree runtime with ROS 2 through a turtlesim scenario.
+A delivery classification system for multi-robot.
 
 
-### Simple Example (Turtlesim Navigation)
-
-Launch Turtlesim
+Launch Limo sensor
 ```
-ros2 run turtlesim turtlesim_node
+ros2 launch wego teleop_launch.py
 ```
 
-Spawn a Target Turtle
+Nav2-limo
 ```
-ros2 service call /spawn turtlesim/srv/Spawn "{x: 5.5, y: 5.5, theta: 0.0, name: 'turtle_target'}"
-```
-
-Teleoperate the Target Turtle
-```
-ros2 run turtlesim turtle_teleop_key --ros-args -r /turtle1/cmd_vel:=/turtle_target/cmd_vel
+ros2 launch wego navigation_diff_launch.py
 ```
 
-Move the spawned turtle using keyboard input
-(The original turtle /turtle1 will be controlled by Behaviour Tree)
-
-
-Run Turtle1 Action Server
+Launch qr detecter
 ```
-python3 scenarios/example_turtlesim/turtle_nav_action_server.py --ns /turtle1
+ros2 launch limo_qr_system qr_system.launch.py
 ```
 
-Run Behaviour Tree Controller
+Launch button_serial
 ```
+ros2 run limo_button_serial button_serial_node
+```
+
+BT-Nav2
+```
+python3 scenarios/finalproject/limo_nav_action_server.py
+```
+
+BT-Limo
+'''
+python3 scenarios/finalproject/limo_action_server.py
+'''
+
+Run BT
+'''
 python3 main.py
-```
-
-
+'''
